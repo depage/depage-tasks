@@ -185,6 +185,8 @@ class TaskRunner
         while (true) {
             $tasks = Task::loadAll($this->pdo);
 
+            // @todo handle notifications with mail delivery
+
             // @todo add a maximum number of concurrently running tasks
             foreach($tasks as $task) {
                 if ($task->status === null) {
