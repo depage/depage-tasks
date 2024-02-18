@@ -11,11 +11,10 @@
         "queue"
     ],
     "require": {
-    "require": {
         "depage/db": "dev-master",
         "depage/router": "dev-master",
         "depage/notifications": "dev-master",
-        "php": " >= 7.0"
+        "php": " >= 8.2"
     },
     "autoload": {
         "psr-4": { "Depage\\Tasks\\": "" }

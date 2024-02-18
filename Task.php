@@ -5,7 +5,7 @@
  * depage cms task runner module
  *
  *
- * copyright (c) 2011-2014 Frank Hellenkamp [jonas@depage.net]
+ * copyright (c) 2011-2024 Frank Hellenkamp [jonas@depage.net]
  * copyright (c) 2011 Lion Vollnhals [lion.vollnhals@googlemail.com]
  *
  * @author    Frank Hellenkamp [jonas@depage.net]
@@ -15,12 +15,17 @@
 namespace Depage\Tasks;
 
 class Task {
-    private $tmpvars = array();
+    private $tmpvars = [];
 
     /**
      * @brief fp file pointer to file lock
      **/
     protected $lockFp = null;
+
+    /**
+     * @brief pdo instance
+     **/
+    protected $pdo = null;
 
     /**
      * @brief int Id of Task
@@ -60,7 +65,7 @@ class Task {
     /**
      * @brief timeToCheckSubtasks seconds after which task runner will check for new subtask
      **/
-    protected $timeToCheckSubtasks = 10;
+    protected $timeToCheckSubtasks = 30;
 
     /**
      * @brief lastCheck time of last check for new subtasks
@@ -68,17 +73,25 @@ class Task {
     protected $lastCheck = null;
 
     /**
+     * @brief subtasks array that holds subtasks loaded from database
+     **/
+    protected $subtasks = [];
+
+    /**
      * @brief subTasksRun array of subtask ids that where already run
      **/
-    protected $subTasksRun = array();
+    protected $subTasksRun = [];
 
+    /**
+     * @brief lockName name of lock file
+     **/
+    protected $lockName = "";
 
     // {{{ constructor
     private function __construct($pdo) {
         $this->pdo = $pdo;
         $this->tableTasks = $this->pdo->prefix . "_tasks";
         $this->tableSubtasks = $this->pdo->prefix . "_subtasks";
-
     }
     // }}}
 
@@ -178,8 +191,16 @@ class Task {
     static public function escapeParam($param) {
         switch (gettype($param)) {
             case 'object':
-            case 'array':
                 return "unserialize(" . var_export(serialize($param), true) . ")";
+            break;
+            case 'array':
+                $code = "";
+                foreach ($param as $key => $val) {
+                    $code .= self::escapeParam($key) . " => " . self::escapeParam($val) . ",";
+                }
+                $code = trim($code, ",");
+
+                return "[$code]";
             break;
             default:
                 return var_export($param, true);
@@ -216,7 +237,7 @@ class Task {
             "DELETE FROM {$this->tableTasks}
             WHERE id = :id"
         );
-        $query->execute(array(
+        return $query->execute(array(
             "id" => $this->taskId,
         ));
     }
@@ -249,6 +270,9 @@ class Task {
     // }}}
     // {{{ setSubtaskStatus()
     public function setSubtaskStatus($subtask, $status) {
+        if ($status !== null) {
+            $status = mb_substr($status, 0, 240);
+        }
         $query = $this->pdo->prepare(
             "UPDATE {$this->tableSubtasks}
             SET status = :status
@@ -260,11 +284,52 @@ class Task {
         ));
     }
     // }}}
+    // {{{ setSubtaskError()
+    public function setSubtaskError($subtask, $errorMsg) {
+        $query = $this->pdo->prepare(
+            "UPDATE {$this->tableSubtasks}
+            SET status = :status,
+                errorMessage = :errorMessage
+            WHERE id = :id"
+        );
+        $query->execute(array(
+            "status" => "failed",
+            "errorMessage" => $errorMsg,
+            "id" => $subtask->id,
+        ));
+    }
+    // }}}
+    // {{{ retrySubtask()
+    /**
+     * @brief retrySubtask
+     *
+     * @param $subtask to retry
+     * @return bool if task is retried
+     **/
+    public function retrySubtask($subtask)
+    {
+        $subtask->retries--;
+        $query = $this->pdo->prepare(
+            "UPDATE {$this->tableSubtasks}
+            SET retries = :retries
+            WHERE id = :id"
+        );
+        $query->execute(array(
+            "retries" => $subtask->retries,
+            "id" => $subtask->id,
+        ));
+        if ($subtask->retries > 0) {
+            return true;
+        }
+
+        return false;
+    }
+    // }}}
     // {{{ getNextSubtask();
     public function getNextSubtask() {
         if (time() - $this->timeToCheckSubtasks > $this->lastCheck) {
             // clear subtasks so that subtask have to be reloaded
-            $this->subtasks = array();
+            $this->subtasks = [];
         }
         $subtask = current($this->subtasks);
 
@@ -274,6 +339,8 @@ class Task {
             $subtask = current($this->subtasks);
         }
         next($this->subtasks);
+
+        $this->retries = 0;
 
         return $subtask;
     }
@@ -294,8 +361,10 @@ class Task {
         unset($subtask, $_tmpindex, $_tmpvar);
 
         $_tmpnames = array_keys(get_defined_vars());
+        $this->tmpvars = [];
         foreach ($_tmpnames as $_tmpname)
         {
+            // @todo only save in tempvars if task has subtask?
             $this->tmpvars[$_tmpname] = &$$_tmpname;
         }
 
@@ -360,6 +429,30 @@ class Task {
     }
     // }}}
 
+    // {{{ beginTaskTransaction()
+    /**
+     * @brief beginTaskTransaction
+     *
+     * @param mixed
+     * @return void
+     **/
+    public function beginTaskTransaction()
+    {
+        $this->pdo->beginTransaction();
+    }
+    // }}}
+    // {{{ commitTaskTransaction()
+    /**
+     * @brief commitTaskTransaction
+     *
+     * @param mixed
+     * @return void
+     **/
+    public function commitTaskTransaction()
+    {
+        $this->pdo->commit();
+    }
+    // }}}
     // {{{ addSubtask()
     /* addSubtask only creates task in db.
      * the current instance is NOT modified.
@@ -369,7 +462,7 @@ class Task {
      *
      * @return int return id of created subtask that can be used for dependsOn
      */
-    public function addSubtask($name, $php, $params = array(), $dependsOn = NULL) {
+    public function addSubtask($name, $php, $params = array(), $dependsOn = NULL, $maxRetries = 3) {
         if (!is_array($params)) {
             $params = array();
         }
@@ -379,11 +472,12 @@ class Task {
         $phpCode = trim(vsprintf($php, $params));
         $query = $this->pdo->prepare(
             "INSERT INTO {$this->tableSubtasks}
-                (taskId, name, php, dependsOn) VALUES (:taskId, :name, :php, :dependsOn)"
+                (taskId, name, retries, php, dependsOn) VALUES (:taskId, :name, :retries, :php, :dependsOn)"
         );
         $query->execute(array(
             "taskId" => $this->taskId,
-            "name" => $name,
+            "name" => mb_substr($name, 0, 250),
+            "retries" => $maxRetries,
             "php" => $phpCode,
             "dependsOn" => $dependsOn,
         ));
@@ -402,6 +496,8 @@ class Task {
      * dependsOn references another task in this array by index.
      */
     public function addSubtasks($tasks) {
+        $this->beginTaskTransaction();
+
         foreach ($tasks as &$task) {
             if (!is_array($task)) {
                 throw new \Exception ("malformed task array");
@@ -415,18 +511,26 @@ class Task {
 
             $task["id"] = $this->addSubtask($task["name"], $task["php"], array(), $dependsOn);
         }
+
+        $this->commitTaskTransaction();
     }
     // }}}
 
     // {{{ getProgress()
     public function getProgress() {
-        $progress = array();
+        $progress = (object) [
+            'percent' => 0,
+            'estimated' => 0,
+            'timeStarted' => 0,
+            'description' => "",
+            'status' => "",
+        ];
 
         // {{{ get progress
         $query = $this->pdo->prepare(
             "SELECT
-                (SELECT COUNT(*) FROM {$this->tableSubtasks} WHERE taskId = :taskId1) AS num,
-                (SELECT COUNT(*) FROM {$this->tableSubtasks} WHERE taskId = :taskId2 AND status = 'done') AS done"
+                (SELECT COUNT(*) FROM {$this->tableSubtasks} WHERE task_id = :taskId1) AS num,
+                (SELECT COUNT(*) FROM {$this->tableSubtasks} WHERE task_id = :taskId2 AND status = 'done') AS done"
         );
         $query->execute(array(
             "taskId1" => $this->taskId,
@@ -434,11 +538,15 @@ class Task {
         ));
         $result = $query->fetchObject();
 
+        if (!$result || $result->num == 0) {
+            return $progress;
+        }
+
         $tasksSum = $result->num;
-        $tasksDone = $result->done > 0 ? $result->done : 0.0001;
+        $tasksDone = $result->done;
         $tasksPlanned = $tasksSum - $tasksDone;
 
-        $progress['percent'] = (int) ($tasksDone / $tasksSum * 100);
+        $progress->percent = (int) ($tasksDone / $tasksSum * 100);
         // }}}
         // {{{ get estimated times
         $query = $this->pdo->prepare(
@@ -451,15 +559,19 @@ class Task {
         ));
         $result = $query->fetchObject();
 
-        $progress['estimated'] = (int) (($result->time / $tasksDone) * $tasksPlanned) * 1.1 + 1;
-        $progress['time_started'] = (int) $result->timeStarted;
+        if ($tasksDone == 0) {
+            $progress->estimated = -1;
+        } else {
+            $progress->estimated = (int) (($result->time / $tasksDone) * $tasksPlanned) * 1.2 + 1;
+        }
+        $progress->timeStarted = (int) $result->timeStarted;
         // }}}
         // {{{ get name and status of running subtask
         $query = $this->pdo->prepare(
             "SELECT name, status
             FROM {$this->tableSubtasks}
             WHERE
-                taskId = :taskId AND
+                task_id = :taskId AND
                 (status IS NULL OR status != 'done')
             ORDER BY id ASC
             LIMIT 1"
@@ -470,11 +582,8 @@ class Task {
         $result = $query->fetchObject();
 
         if ($result) {
-            $progress['description'] = $result->name;
-            $progress['status'] = $result->status;
-        } else {
-            $progress['description'] = "";
-            $progress['status'] = "";
+            $progress->description = $result->name;
+            $progress->status = $result->status;
         }
         // }}}
 

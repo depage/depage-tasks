@@ -19,7 +19,24 @@ CREATE TABLE `_subtasks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 /*
-    @version 1.6.0
+    @version 2.1.1
+*/
+ALTER TABLE `_subtasks` ADD KEY `status` (`status`);
+
+/*
+    @version 2.1.10
+*/
+ALTER TABLE `_subtasks` ADD `retries` int(11) NOT NULL DEFAULT 0 AFTER `status`;
+
+/*
+    @version 2.3.2
+*/
+ALTER TABLE `_subtasks`
+  CHANGE COLUMN `status` `status` enum('done', 'failed') DEFAULT NULL,
+  ADD `errorMessage` text NOT NULL DEFAULT '' AFTER `status`;
+
+/*
+    @version 2.5.0
 */
 ALTER TABLE `_subtasks`
     CHANGE COLUMN `task_id` `taskId` int(11) unsigned NOT NULL,

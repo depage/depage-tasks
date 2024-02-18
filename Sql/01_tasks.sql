@@ -16,7 +16,18 @@ CREATE TABLE `_tasks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 /*
-    @version 1.6.0
+    @version 2.1.1
+*/
+ALTER TABLE `_tasks` ADD KEY `scondary` (`name`, `status`);
+
+/*
+    @version 2.3.2
+*/
+ALTER TABLE `_tasks`
+    CHANGE COLUMN `status` `status` enum('generating', 'done', 'failed') DEFAULT 'generating';
+
+/*
+    @version 2.5.0
 */
 ALTER TABLE `_tasks`
     CHANGE COLUMN `time_added` `timeAdded` datetime NOT NULL,
