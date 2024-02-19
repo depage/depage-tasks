@@ -40,4 +40,5 @@ ALTER TABLE `_subtasks`
 */
 ALTER TABLE `_subtasks`
     CHANGE COLUMN `task_id` `taskId` int(11) unsigned NOT NULL,
-    CHANGE COLUMN `depends_on` `dependsOn` int(11) DEFAULT NULL;
+    CHANGE COLUMN `depends_on` `dependsOn` int(11) DEFAULT NULL,
+    ADD COLUMN `workerClass` varchar(255) NOT NULL;

@@ -217,7 +217,7 @@ class Task {
      **/
     public static function updateSchema($pdo)
     {
-        $schema = new \Depage\DB\Schema($pdo);
+        $schema = new \Depage\Db\Schema($pdo);
 
         $schema->setReplace(
             function ($tableName) use ($pdo) {
