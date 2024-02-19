@@ -10,6 +10,9 @@ doc:
 test:
 	vendor/bin/phpunit Tests/ --stop-on-failure --bootstrap Tests/bootstrap.php
 
+testCurrent:
+	vendor/bin/phpunit Tests/ --stop-on-failure --bootstrap Tests/bootstrap.php --filter testWorkerPool
+
 clean:
 	$(RM) Docs/depage-docu/ Docs/html/
 
