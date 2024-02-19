@@ -935,12 +935,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/depage/depage-db.git",
-                "reference": "860636e45816f05bff11d42406a4201dc6718ad6"
+                "reference": "6b5d6016f281515213183448afe2846db1128453"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/depage/depage-db/zipball/860636e45816f05bff11d42406a4201dc6718ad6",
-                "reference": "860636e45816f05bff11d42406a4201dc6718ad6",
+                "url": "https://api.github.com/repos/depage/depage-db/zipball/6b5d6016f281515213183448afe2846db1128453",
+                "reference": "6b5d6016f281515213183448afe2846db1128453",
                 "shasum": ""
             },
             "require": {

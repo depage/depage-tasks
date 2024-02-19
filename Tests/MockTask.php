@@ -16,8 +16,8 @@ class MockTask implements Task
 
     public function run(Channel $channel, Cancellation $cancellation): string
     {
-        $sleep = rand(0, 2);
-        echo "running task $sleep: {$this->url}\n";
+        $sleep = rand(0, 10) / 10;
+        //echo "running task $sleep: {$this->url}\n";
         delay($sleep);
 
         return "url: " .  $this->url; // Example blocking function

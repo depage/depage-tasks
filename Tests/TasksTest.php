@@ -14,6 +14,26 @@ use function \Amp\Parallel\Worker\workerPool;
 class TasksTest extends TestCase
 {
     private $pdo = null;
+    private $testParams = [
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+        'https://depage.net',
+        'https://edit.depage.net',
+        'https://immerdasgleiche.de',
+    ];
 
     public function setUp(): void
     {
@@ -25,30 +45,10 @@ class TasksTest extends TestCase
 
     public function testSimple():void
     {
-        $params = [
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-        ];
         $executions = [];
         $pool = new Worker\ContextWorkerPool(4);
 
-        foreach ($params as $id => $param) {
+        foreach ($this->testParams as $id => $param) {
             $worker = workerPool($pool);
             $task = new MockTask($param . " $id");
             $executions[] = $worker->submit($task);
@@ -60,35 +60,20 @@ class TasksTest extends TestCase
         ));
 
         foreach ($responses as $id => $response) {
-            $this->assertEquals("url: {$params[$id]} {$id}", $response);
+            $this->assertEquals("url: {$this->testParams[$id]} {$id}", $response);
         }
+
+        $pool->shutdown();
     }
 
     public function testWorkerPool():void
     {
-        $params = [
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-            'https://edit.depage.net',
-            'https://immerdasgleiche.de',
-            'https://depage.net',
-        ];
         $workers = [];
         $freeWorkers = [];
         $numWorkers = 4;
         $pool = new Worker\ContextWorkerPool($numWorkers);
 
+        // start workers
         for ($i = 0; $i < $numWorkers; $i++) {
             $worker = workerPool($pool);
             $task = new MockWorker("worker $i");
@@ -96,7 +81,8 @@ class TasksTest extends TestCase
             $freeWorkers[] = $i;
         }
 
-        $results = Pipeline::fromIterable($params)
+        // queue tasks to workers
+        $results = Pipeline::fromIterable($this->testParams)
             ->concurrent($numWorkers)
             ->unordered()
             ->map(function($param) use (&$workers, &$freeWorkers) {
@@ -118,11 +104,13 @@ class TasksTest extends TestCase
 
         //var_dump($results);
 
+        // close workers
         foreach ($workers as $w) {
-            // close workers
             $w->getChannel()->send(null);
 
         }
+
+        // wait for workder to end
         $responses = Future\await(array_map(
             fn (Worker\Execution $e) => $e->getFuture(),
             $workers,
@@ -131,5 +119,7 @@ class TasksTest extends TestCase
         foreach ($responses as $id => $response) {
             $this->assertEquals("ended", $response);
         }
+
+        $pool->shutdown();
     }
 }
