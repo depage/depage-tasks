@@ -39,6 +39,8 @@ ALTER TABLE `_subtasks`
     @version 2.5.0
 */
 ALTER TABLE `_subtasks`
+    DROP COLUMN `php`,
     CHANGE COLUMN `task_id` `taskId` int(11) unsigned NOT NULL,
     CHANGE COLUMN `depends_on` `dependsOn` int(11) DEFAULT NULL,
-    ADD COLUMN `workerClass` varchar(255) NOT NULL;
+    ADD COLUMN `workerClass` varchar(255) NOT NULL,
+    ADD COLUMN `params` longblob NOT NULL;

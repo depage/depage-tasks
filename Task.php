@@ -591,6 +591,13 @@ class Task {
     }
     // }}}
 
+    public function queueSubtask($name, $workerClass, ...$params) {
+        $subtask = new Subtask($this->pdo, $this->taskId, $name, $workerClass, $params);
+        $subtask->save();
+
+        return $subtask;
+    }
+
     // private functions
     // {{{ createTask()
     private function createTask($taskName, $projectName = "") {

@@ -20,6 +20,6 @@ class MockTask implements Task
         //echo "running task $sleep: {$this->url}\n";
         delay($sleep);
 
-        return "url: " .  $this->url; // Example blocking function
+        return "testData: " .  $this->url; // Example blocking function
     }
 }

@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Amp\Parallel\Worker;
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
-use function \Amp\Parallel\Worker\workerPool;
+use function Amp\Parallel\Worker\workerPool;
 
 /**
  * General tests for the htmlform class.
@@ -15,24 +15,22 @@ class TasksTest extends TestCase
 {
     private $pdo = null;
     private $testParams = [
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
-        'https://depage.net',
-        'https://edit.depage.net',
-        'https://immerdasgleiche.de',
+        'wDS0b3VQos8s3SfpUiafv9CGqcMKgkJGd7/orv5B8xE=',
+        'xYfG20+oTe2qtdHQ5Tjhwjnk/Xska+1+NM7EJBnwfxo=',
+        'idiD532YoVQpyJsSZyT85/N512JpJFzUw/gpadwd+kc=',
+        'iL4cjbL18sC4GbxMjdxmDn46t36o9LDj9343IwTGCQM=',
+        '/uq6Kh4g3PPEZC55hBa7GhuIVFaHhSM8KKghkwbqlMg=',
+        'z5k9YLpF9CNEAkN/Gbm2GZWdopLfv2V3C8WhF74KMhc=',
+        'acrXV02MTdOzW8gyQstMVIKtOJ2XP+dqYMfe+73DC0k=',
+        'xlV/oHFV0NlW47LRSUAMVsIQMqmyx86SEWQHFF0+epY=',
+        'ISDKszP76Pgvfslt2QT3ezXkqYq7j9S2VtPfD92EmJU=',
+        'wXsXX3kGrFnW2mHEGwRZxm4rQRBkkFfrEvkgXA9nlZE=',
+        'IGf9rW1NFMNDYGsC/3g84aLMPFMGzm4J4SN/pjuLodU=',
+        'dz2f88k5WN5tzhgma7yp0mQ4GYooPK3s7N6IXWyzNjc=',
+        'n4t9OJZElDoxXS+htYcflV4Tqssf/I5G2xsxa4Cwfjo=',
+        '/BQ49rd6qzLz7y65v19i3Pl17FDeirToBi/RDPt0lQg=',
+        'hZpjtHBWDC0D5sqZEWB+yTWB6NMOUnjqdS9u1U+JLpw=',
+        'rY2hrwvw//fx7UNIbSCQOUjBR3w+Su4Cqq7PQ5ixcLw=',
     ];
 
     public function setUp(): void
@@ -40,7 +38,21 @@ class TasksTest extends TestCase
         $this->pdo = new \Depage\Db\Pdo("mysql:dbname=test_db;host=127.0.0.1", "test_db_user", "test_db_password");
         $this->pdo->prefix = "tasks";
 
+        $this->pdo->query("DROP TABLE tasks_subtaskatomic, tasks_subtasks, tasks_tasks;");
+
         \Depage\Tasks\Task::updateSchema($this->pdo);
+    }
+
+    public function testTaskGenerator():void
+    {
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testTaskGenerator", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockTask::class,
+            "initial parameter 1",
+            "initial parameter 2",
+        );
+        foreach ($this->testParams as $id => $param) {
+            $subtask->queueMethodCall("testMethod", $param);
+        }
     }
 
     public function testSimple():void
@@ -60,7 +72,7 @@ class TasksTest extends TestCase
         ));
 
         foreach ($responses as $id => $response) {
-            $this->assertEquals("url: {$this->testParams[$id]} {$id}", $response);
+            $this->assertEquals("testData: {$this->testParams[$id]} {$id}", $response);
         }
 
         $pool->shutdown();

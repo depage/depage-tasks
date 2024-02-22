@@ -9,6 +9,7 @@
 CREATE TABLE `_subtaskatomic` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `subtaskId` int(11) unsigned NOT NULL,
+  `methodName` varchar(255) NOT NULL,
   `params` longblob NOT NULL,
   `status` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
