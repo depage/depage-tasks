@@ -62,12 +62,14 @@ class Subtask
     }
     // }}}
     // {{{ run()
-    public function run():void
+    public function run(&$success = 0, &$errors = 0):bool
     {
         $workers = [];
         $freeWorkers = [];
         $numWorkers = 4;
         $pool = new Worker\ContextWorkerPool($numWorkers);
+        $errors = 0;
+        $success = 0;
 
         // start workers
         for ($i = 0; $i < $numWorkers; $i++) {
@@ -84,7 +86,7 @@ class Subtask
             $pipeline = Pipeline::fromIterable($atomicIterator)
                 ->concurrent($numWorkers)
                 ->unordered()
-                ->map(function($atomic) use (&$workers, &$freeWorkers) {
+                ->map(function($atomic) use (&$workers, &$freeWorkers, &$success, &$errors) {
                     $workerId = array_shift($freeWorkers);
 
                     $ch = $workers[$workerId]->getChannel();
@@ -93,8 +95,23 @@ class Subtask
 
                     $response = $ch->receive();
 
-                    $query = $this->pdo->prepare("UPDATE {$this->pdo->prefix}_subtaskatomic SET status = 'done' WHERE id = ?");
-                    $query->execute([$atomic->id]);
+                    $query = $this->pdo->prepare("
+                        UPDATE {$this->pdo->prefix}_subtaskatomic
+                        SET status = :status,
+                            errorMessage = :errorMessage
+                        WHERE id = :id
+                    ");
+                    $query->execute([
+                        'id' => $atomic->id,
+                        'status' => $response->status(),
+                        'errorMessage' => $response->error,
+                    ]);
+
+                    if ($response->failed()) {
+                        $errors++;
+                    } else {
+                        $success++;
+                    }
 
                     $freeWorkers[] = $workerId;
 
@@ -121,6 +138,8 @@ class Subtask
         ));
 
         $pool->shutdown();
+
+        return $errors === 0;
     }
     // }}}
 }

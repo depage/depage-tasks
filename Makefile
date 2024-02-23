@@ -8,11 +8,17 @@ doc:
 	cp -r Docs/depage-docu/www/lib Docs/html/
 
 test:
-	vendor/bin/phpunit Tests/ --stop-on-failure --bootstrap Tests/bootstrap.php
+	vendor/bin/phpunit Tests/ \
+		--bootstrap Tests/bootstrap.php \
+		--stop-on-failure \
+		--display-deprecations
 
 testCurrent:
-	vendor/bin/phpunit Tests/ --stop-on-failure --bootstrap Tests/bootstrap.php --filter testTaskGenerator --display-deprecations
-
+	vendor/bin/phpunit Tests/ \
+		--bootstrap Tests/bootstrap.php \
+		--stop-on-failure \
+		--display-deprecations \
+		--filter testSubtaskException
 clean:
 	$(RM) Docs/depage-docu/ Docs/html/
 

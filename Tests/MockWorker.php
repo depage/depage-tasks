@@ -17,9 +17,14 @@ class MockWorker implements Task
     public function run(Channel $channel, Cancellation $cancellation): string
     {
         while ($message = $channel->receive()) {
-            $reply = $this->{$message->methodName}(...$message->args);
+            try {
+                $reply = $this->{$message->methodName}(...$message->args);
 
-            $channel->send(new \Depage\Tasks\MethodResult('testMethod', $reply));
+                $channel->send(new \Depage\Tasks\MethodResult('testMethod', $reply));
+            } catch (\Throwable $e) {
+                //$channel->send(new \Depage\Tasks\MethodResult('testMethod', null, $e));
+                $channel->send(new \Depage\Tasks\MethodResult('testMethod', null, (string) $e));
+            }
         }
 
         return "ended";
@@ -32,5 +37,10 @@ class MockWorker implements Task
         delay($sleep);
 
         return "testMethod: " . $param;
+    }
+
+    protected function testException($param):string
+    {
+        throw new \Exception("testException: " . $param);
     }
 }

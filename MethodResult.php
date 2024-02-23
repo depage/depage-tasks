@@ -20,7 +20,18 @@ class MethodResult
     public function __construct(
         public readonly string $methodName,
         public readonly mixed $result,
+        public readonly mixed $error = null,
     ) {
+    }
+
+    public function failed():bool
+    {
+        return $this->error !== null;
+    }
+
+    public function status():string
+    {
+        return $this->error !== null ? "failed" : "done";
     }
 }
 

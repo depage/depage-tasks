@@ -56,35 +56,56 @@ class TasksTest extends TestCase
             $subtask->queueMethodCall("testMethod", $param);
         }
 
-        async(function() use ($subtask) {
-            delay(1.5);
-            echo "adding new atomics with delay\n";
-
-            foreach ($this->testParams as $id => $param) {
-                if ($id <= 8) {
-                    $subtask->queueMethodCall("testMethod", $param);
-                }
-            }
-        });
-        async(function() use ($subtask) {
-            delay(2.5);
-            echo "adding new atomics with delay\n";
-
-            foreach ($this->testParams as $id => $param) {
-                if ($id > 8) {
-                    $subtask->queueMethodCall("testMethod", $param);
-                }
-            }
-        });
-
-
+        // tests are correctly retrieved from the database
         $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $subtask->id);
         foreach ($atomicIterator as $atomic) {
             $this->assertEquals("testMethod", $atomic->methodName);
             $this->assertEquals($this->testParams[$atomicIterator->key()], unserialize($atomic->params)[0]);
         }
 
-        $subtask->run();
+        // adding new atomics with delay
+        async(function() use ($subtask) {
+            delay(1.5);
+
+            foreach ($this->testParams as $id => $param) {
+                if ($id <= count($this->testParams) / 2) {
+                    $subtask->queueMethodCall("testMethod", $param);
+                }
+            }
+        });
+        async(function() use ($subtask) {
+            delay(2.5);
+
+            foreach ($this->testParams as $id => $param) {
+                if ($id > count($this->testParams) / 2) {
+                    $subtask->queueMethodCall("testMethod", $param);
+                }
+            }
+        });
+
+        $success = $subtask->run($successes, $errors);
+
+        $this->assertEquals(true, $success);
+        $this->assertEquals(count($this->testParams) * 2, $successes);
+        $this->assertEquals(0, $errors);
+    }
+
+    public function testSubtaskException():void
+    {
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testSubtaskException", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+        );
+        foreach ($this->testParams as $id => $param) {
+            $subtask->queueMethodCall("testException", $param);
+        }
+
+        $success = $subtask->run($successes, $errors);
+
+        $this->assertEquals(false, $success);
+        $this->assertEquals(16, $errors);;
+        $this->assertEquals(0, $successes);
     }
 
     public function testSimple():void
