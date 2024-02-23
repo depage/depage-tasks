@@ -7,6 +7,8 @@ use Amp\Parallel\Worker;
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
 use function Amp\Parallel\Worker\workerPool;
+use function Amp\async;
+use function Amp\delay;
 
 /**
  * General tests for the htmlform class.
@@ -46,13 +48,43 @@ class TasksTest extends TestCase
     public function testTaskGenerator():void
     {
         $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testTaskGenerator", "projectName");
-        $subtask = $task->queueSubtask("stage-1", MockTask::class,
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
             "initial parameter 1",
             "initial parameter 2",
         );
         foreach ($this->testParams as $id => $param) {
             $subtask->queueMethodCall("testMethod", $param);
         }
+
+        async(function() use ($subtask) {
+            delay(1.5);
+            echo "adding new atomics with delay\n";
+
+            foreach ($this->testParams as $id => $param) {
+                if ($id <= 8) {
+                    $subtask->queueMethodCall("testMethod", $param);
+                }
+            }
+        });
+        async(function() use ($subtask) {
+            delay(2.5);
+            echo "adding new atomics with delay\n";
+
+            foreach ($this->testParams as $id => $param) {
+                if ($id > 8) {
+                    $subtask->queueMethodCall("testMethod", $param);
+                }
+            }
+        });
+
+
+        $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $subtask->id);
+        foreach ($atomicIterator as $atomic) {
+            $this->assertEquals("testMethod", $atomic->methodName);
+            $this->assertEquals($this->testParams[$atomicIterator->key()], unserialize($atomic->params)[0]);
+        }
+
+        $subtask->run();
     }
 
     public function testSimple():void

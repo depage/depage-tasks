@@ -11,9 +11,14 @@
 
 namespace Depage\Tasks;
 
+use Amp\Parallel\Worker;
+use Amp\Pipeline\Pipeline;
+use Amp\Future;
+use function Amp\Parallel\Worker\workerPool;
+
 class Subtask
 {
-    protected int $id;
+    public readonly int $id;
 
     // {{{ __construct()
     public function __construct(
@@ -54,6 +59,68 @@ class Subtask
             $methodName,
             serialize($params),
         ]);
+    }
+    // }}}
+    // {{{ run()
+    public function run():void
+    {
+        $workers = [];
+        $freeWorkers = [];
+        $numWorkers = 4;
+        $pool = new Worker\ContextWorkerPool($numWorkers);
+
+        // start workers
+        for ($i = 0; $i < $numWorkers; $i++) {
+            $worker = workerPool($pool);
+            $task = new $this->workerClass(...$this->params);
+            $workers[$i] = $worker->submit($task);
+            $freeWorkers[] = $i;
+        }
+
+        $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $this->id);
+
+        while ($atomicIterator->hasItems()) {
+            // queue tasks to workers
+            $pipeline = Pipeline::fromIterable($atomicIterator)
+                ->concurrent($numWorkers)
+                ->unordered()
+                ->map(function($atomic) use (&$workers, &$freeWorkers) {
+                    $workerId = array_shift($freeWorkers);
+
+                    $ch = $workers[$workerId]->getChannel();
+
+                    $ch->send(new \Depage\Tasks\MethodCall($atomic->methodName, unserialize($atomic->params)));
+
+                    $response = $ch->receive();
+
+                    $query = $this->pdo->prepare("UPDATE {$this->pdo->prefix}_subtaskatomic SET status = 'done' WHERE id = ?");
+                    $query->execute([$atomic->id]);
+
+                    $freeWorkers[] = $workerId;
+
+                    return $response->result;
+                })->getIterator();
+
+            while ($pipeline->continue()) {
+                // wait for pipeline
+            }
+
+            // reset atomicIterator and request new items in queue if available
+            $atomicIterator->rewind();
+        }
+
+        // close workers
+        foreach ($workers as $w) {
+            $w->getChannel()->send(null);
+        }
+
+        // wait for workers to end
+        $responses = Future\await(array_map(
+            fn (Worker\Execution $e) => $e->getFuture(),
+            $workers,
+        ));
+
+        $pool->shutdown();
     }
     // }}}
 }
