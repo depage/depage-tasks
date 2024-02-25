@@ -19,6 +19,14 @@ testCurrent:
 		--stop-on-failure \
 		--display-deprecations \
 		--filter testSubtaskException
+
+testLast:
+	vendor/bin/phpunit Tests/ \
+		--bootstrap Tests/bootstrap.php \
+		--stop-on-failure \
+		--display-deprecations \
+		--filter testTaskGenerator
+
 clean:
 	$(RM) Docs/depage-docu/ Docs/html/
 

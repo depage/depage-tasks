@@ -15,6 +15,7 @@ use Amp\Parallel\Worker;
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
 use function Amp\Parallel\Worker\workerPool;
+use function Amp\async;
 
 class Subtask
 {
@@ -81,13 +82,21 @@ class Subtask
 
         $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $this->id);
 
-        while ($atomicIterator->hasItems()) {
+        while ($errors == 0 && $atomicIterator->hasItems()) {
             // queue tasks to workers
             $pipeline = Pipeline::fromIterable($atomicIterator)
                 ->concurrent($numWorkers)
                 ->unordered()
-                ->map(function($atomic) use (&$workers, &$freeWorkers, &$success, &$errors) {
+                ->tap(function($atomic) use (&$workers, &$freeWorkers, &$success, &$errors) {
+                    // dont run if errors
+                    if ($errors > 0) {
+                        return false;
+                    }
                     $workerId = array_shift($freeWorkers);
+                    if ($workerId === null) {
+                        // no free workers
+                        return false;
+                    }
 
                     $ch = $workers[$workerId]->getChannel();
 
@@ -112,27 +121,30 @@ class Subtask
                     } else {
                         $success++;
                     }
-
                     $freeWorkers[] = $workerId;
+                });
 
-                    return $response->result;
-                })->getIterator();
+            $pipelineIterator = $pipeline->getIterator();
 
-            while ($pipeline->continue()) {
+            while ($pipelineIterator->continue()) {
                 // wait for pipeline
             }
 
-            // reset atomicIterator and request new items in queue if available
-            $atomicIterator->rewind();
+            if ($errors == 0) {
+                // reset atomicIterator and request new items in queue if available
+                $atomicIterator->rewind();
+            }
         }
 
         // close workers
         foreach ($workers as $w) {
-            $w->getChannel()->send(null);
+            if (!is_null($w)) {
+                $w->getChannel()->send(null);
+            }
         }
 
         // wait for workers to end
-        $responses = Future\await(array_map(
+        $responses = Future\awaitAny(array_map(
             fn (Worker\Execution $e) => $e->getFuture(),
             $workers,
         ));

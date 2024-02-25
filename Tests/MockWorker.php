@@ -41,6 +41,10 @@ class MockWorker implements Task
 
     protected function testException($param):string
     {
+        $sleep = rand(0, 10) / 10;
+        //echo "running testMethod $sleep on $this->initArg: {$param}\n";
+        delay($sleep);
+
         throw new \Exception("testException: " . $param);
     }
 }

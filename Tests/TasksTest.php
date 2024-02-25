@@ -98,14 +98,18 @@ class TasksTest extends TestCase
             "initial parameter 2",
         );
         foreach ($this->testParams as $id => $param) {
-            $subtask->queueMethodCall("testException", $param);
+            if ($id == 3) {
+                $subtask->queueMethodCall("testException", $param);
+            } else {
+                $subtask->queueMethodCall("testMethod", $param);
+            }
         }
 
         $success = $subtask->run($successes, $errors);
 
         $this->assertEquals(false, $success);
-        $this->assertEquals(16, $errors);;
-        $this->assertEquals(0, $successes);
+        $this->assertEquals(1, $errors);;
+        $this->assertGreaterThanOrEqual(3, $successes);
     }
 
     public function testSimple():void
