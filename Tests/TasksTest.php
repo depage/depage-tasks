@@ -83,11 +83,11 @@ class TasksTest extends TestCase
             }
         });
 
-        $success = $subtask->run($successes, $errors);
+        $success = $subtask->run();
 
         $this->assertEquals(true, $success);
-        $this->assertEquals(count($this->testParams) * 2, $successes);
-        $this->assertEquals(0, $errors);
+        $this->assertEquals(count($this->testParams) * 2, $subtask->getSuccess());
+        $this->assertEquals(0, $subtask->getErrors());
     }
 
     public function testSubtaskException():void
@@ -105,11 +105,11 @@ class TasksTest extends TestCase
             }
         }
 
-        $success = $subtask->run($successes, $errors);
+        $success = $subtask->run();
 
         $this->assertEquals(false, $success);
-        $this->assertEquals(1, $errors);;
-        $this->assertGreaterThanOrEqual(3, $successes);
+        $this->assertEquals(1, $subtask->getErrors());
+        $this->assertGreaterThanOrEqual(3, $subtask->getSuccess());
     }
 
     public function testSimple():void

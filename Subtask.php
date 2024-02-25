@@ -14,12 +14,16 @@ namespace Depage\Tasks;
 use Amp\Parallel\Worker;
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
-use function Amp\Parallel\Worker\workerPool;
-use function Amp\async;
 
 class Subtask
 {
     public readonly int $id;
+    protected $workers = [];
+    protected $freeWorkers = [];
+    protected int $numWorkers = 4;
+    protected int $errors = 0;
+    protected int $success = 0;
+    protected ?string $status = null;
 
     // {{{ __construct()
     public function __construct(
@@ -36,7 +40,12 @@ class Subtask
     public function save():int
     {
         $query = $this->pdo->prepare(
-            "INSERT INTO {$this->pdo->prefix}_subtasks (taskId, name, workerClass, params) VALUES (?, ?, ?, ?)"
+            "INSERT INTO {$this->pdo->prefix}_subtasks (
+                taskId,
+                name,
+                workerClass,
+                params
+            ) VALUES (?, ?, ?, ?)"
         );
         $query->execute([
             $this->taskId,
@@ -63,42 +72,37 @@ class Subtask
     }
     // }}}
     // {{{ run()
-    public function run(&$success = 0, &$errors = 0):bool
+    public function run():bool
     {
-        $workers = [];
-        $freeWorkers = [];
-        $numWorkers = 4;
-        $pool = new Worker\ContextWorkerPool($numWorkers);
-        $errors = 0;
-        $success = 0;
+        $this->workers = [];
+        $this->freeWorkers = [];
+        $pool = new Worker\ContextWorkerPool($this->numWorkers);
+        $this->errors = 0;
+        $this->success = 0;
 
         // start workers
-        for ($i = 0; $i < $numWorkers; $i++) {
-            $worker = workerPool($pool);
+        for ($i = 0; $i < $this->numWorkers; $i++) {
+            $worker = \Amp\Parallel\Worker\workerPool($pool);
             $task = new $this->workerClass(...$this->params);
-            $workers[$i] = $worker->submit($task);
-            $freeWorkers[] = $i;
+            $this->workers[$i] = $worker->submit($task);
+            $this->freeWorkers[] = $i;
         }
 
         $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $this->id);
 
-        while ($errors == 0 && $atomicIterator->hasItems()) {
+        while ($this->errors == 0 && $atomicIterator->hasItems()) {
             // queue tasks to workers
             $pipeline = Pipeline::fromIterable($atomicIterator)
-                ->concurrent($numWorkers)
+                ->concurrent($this->numWorkers)
                 ->unordered()
-                ->tap(function($atomic) use (&$workers, &$freeWorkers, &$success, &$errors) {
+                ->tap(function($atomic){
                     // dont run if errors
-                    if ($errors > 0) {
+                    if ($this->errors > 0) {
                         return false;
                     }
-                    $workerId = array_shift($freeWorkers);
-                    if ($workerId === null) {
-                        // no free workers
-                        return false;
-                    }
+                    $workerId = array_shift($this->freeWorkers);
 
-                    $ch = $workers[$workerId]->getChannel();
+                    $ch = $this->workers[$workerId]->getChannel();
 
                     $ch->send(new \Depage\Tasks\MethodCall($atomic->methodName, unserialize($atomic->params)));
 
@@ -117,11 +121,11 @@ class Subtask
                     ]);
 
                     if ($response->failed()) {
-                        $errors++;
+                        $this->errors++;
                     } else {
-                        $success++;
+                        $this->success++;
                     }
-                    $freeWorkers[] = $workerId;
+                    $this->freeWorkers[] = $workerId;
                 });
 
             $pipelineIterator = $pipeline->getIterator();
@@ -130,14 +134,14 @@ class Subtask
                 // wait for pipeline
             }
 
-            if ($errors == 0) {
+            if ($this->errors == 0) {
                 // reset atomicIterator and request new items in queue if available
                 $atomicIterator->rewind();
             }
         }
 
         // close workers
-        foreach ($workers as $w) {
+        foreach ($this->workers as $w) {
             if (!is_null($w)) {
                 $w->getChannel()->send(null);
             }
@@ -146,12 +150,34 @@ class Subtask
         // wait for workers to end
         $responses = Future\awaitAny(array_map(
             fn (Worker\Execution $e) => $e->getFuture(),
-            $workers,
+            $this->workers,
         ));
 
         $pool->shutdown();
 
-        return $errors === 0;
+        $this->status = $this->errors > 0 ? "failed" : "done";
+        $this->pdo->prepare("
+            UPDATE {$this->pdo->prefix}_subtasks
+            SET status = :status
+            WHERE id = :id
+        ")->execute([
+            'id' => $this->id,
+            'status' => $this->status,
+        ]);
+
+        return $this->errors === 0;
+    }
+    // }}}
+    // {{{ getErrors()
+    public function getErrors():int
+    {
+        return $this->errors;
+    }
+    // }}}
+    // {{{ getSuccess()
+    public function getSuccess():int
+    {
+        return $this->success;
     }
     // }}}
 }
