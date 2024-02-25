@@ -18,6 +18,7 @@ use Amp\Future;
 class Subtask
 {
     public readonly int $id;
+    protected $pool;
     protected $workers = [];
     protected $freeWorkers = [];
     protected int $numWorkers = 4;
@@ -36,7 +37,7 @@ class Subtask
     }
     // }}}
 
-    // {{{ save()
+    // {{{ save()
     public function save():int
     {
         $query = $this->pdo->prepare(
@@ -62,7 +63,11 @@ class Subtask
     public function queueMethodCall(string $methodName, ...$params):void
     {
         $query = $this->pdo->prepare(
-            "INSERT INTO {$this->pdo->prefix}_subtaskatomic (subtaskId, methodName, params) VALUES (?, ?, ?)"
+            "INSERT INTO {$this->pdo->prefix}_subtaskatomic (
+                subtaskId,
+                methodName,
+                params
+            ) VALUES (?, ?, ?)"
         );
         $query->execute([
             $this->id,
@@ -76,17 +81,10 @@ class Subtask
     {
         $this->workers = [];
         $this->freeWorkers = [];
-        $pool = new Worker\ContextWorkerPool($this->numWorkers);
         $this->errors = 0;
         $this->success = 0;
 
-        // start workers
-        for ($i = 0; $i < $this->numWorkers; $i++) {
-            $worker = \Amp\Parallel\Worker\workerPool($pool);
-            $task = new $this->workerClass(...$this->params);
-            $this->workers[$i] = $worker->submit($task);
-            $this->freeWorkers[] = $i;
-        }
+        $this->startPool();
 
         $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $this->id);
 
@@ -100,32 +98,7 @@ class Subtask
                     if ($this->errors > 0) {
                         return false;
                     }
-                    $workerId = array_shift($this->freeWorkers);
-
-                    $ch = $this->workers[$workerId]->getChannel();
-
-                    $ch->send(new \Depage\Tasks\MethodCall($atomic->methodName, unserialize($atomic->params)));
-
-                    $response = $ch->receive();
-
-                    $query = $this->pdo->prepare("
-                        UPDATE {$this->pdo->prefix}_subtaskatomic
-                        SET status = :status,
-                            errorMessage = :errorMessage
-                        WHERE id = :id
-                    ");
-                    $query->execute([
-                        'id' => $atomic->id,
-                        'status' => $response->status(),
-                        'errorMessage' => $response->error,
-                    ]);
-
-                    if ($response->failed()) {
-                        $this->errors++;
-                    } else {
-                        $this->success++;
-                    }
-                    $this->freeWorkers[] = $workerId;
+                    $this->runAtomic($atomic);
                 });
 
             $pipelineIterator = $pipeline->getIterator();
@@ -140,20 +113,7 @@ class Subtask
             }
         }
 
-        // close workers
-        foreach ($this->workers as $w) {
-            if (!is_null($w)) {
-                $w->getChannel()->send(null);
-            }
-        }
-
-        // wait for workers to end
-        $responses = Future\awaitAny(array_map(
-            fn (Worker\Execution $e) => $e->getFuture(),
-            $this->workers,
-        ));
-
-        $pool->shutdown();
+        $this->stopPool();
 
         $this->status = $this->errors > 0 ? "failed" : "done";
         $this->pdo->prepare("
@@ -168,6 +128,72 @@ class Subtask
         return $this->errors === 0;
     }
     // }}}
+    // {{{ runAtomic()
+    protected function runAtomic($atomic):void
+    {
+        $workerId = array_shift($this->freeWorkers);
+
+        $ch = $this->workers[$workerId]->getChannel();
+
+        $ch->send(new \Depage\Tasks\MethodCall($atomic->methodName, unserialize($atomic->params)));
+
+        $response = $ch->receive();
+
+        $query = $this->pdo->prepare("
+            UPDATE {$this->pdo->prefix}_subtaskatomic
+            SET status = :status,
+                errorMessage = :errorMessage
+            WHERE id = :id
+        ");
+        $query->execute([
+            'id' => $atomic->id,
+            'status' => $response->status(),
+            'errorMessage' => $response->error,
+        ]);
+
+        if ($response->failed()) {
+            $this->errors++;
+        } else {
+            $this->success++;
+        }
+        $this->freeWorkers[] = $workerId;
+    }
+    // }}}
+
+    // {{{ startPool()
+    protected function startPool():void
+    {
+        $this->pool = new Worker\ContextWorkerPool($this->numWorkers);
+
+        // start workers
+        for ($i = 0; $i < $this->numWorkers; $i++) {
+            $worker = \Amp\Parallel\Worker\workerPool($this->pool);
+            $task = new $this->workerClass(...$this->params);
+            $this->workers[$i] = $worker->submit($task);
+            $this->freeWorkers[] = $i;
+        }
+    }
+    // }}}
+    // {{{ stopPool()
+    protected function stopPool():void
+    {
+        // close workers
+        foreach ($this->workers as $w) {
+            if (!is_null($w)) {
+                $w->getChannel()->send(null);
+            }
+        }
+
+        // wait for workers to end
+        $responses = Future\awaitAny(array_map(
+            fn (Worker\Execution $e) => $e->getFuture(),
+            $this->workers,
+        ));
+
+        $this->pool->shutdown();
+    }
+    // }}}
+
     // {{{ getErrors()
     public function getErrors():int
     {

@@ -36,7 +36,8 @@ class AtomicIterator implements \Iterator
             "SELECT * FROM {$this->pdo->prefix}_subtaskatomic
             WHERE subtaskId = ?
                 AND status IS NULL
-            ORDER BY id"
+            ORDER BY id
+            LIMIT 100"
         );
         $this->query->execute([$this->subtaskId]);
         $this->count = $this->query->rowCount();
