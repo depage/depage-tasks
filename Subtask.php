@@ -74,6 +74,13 @@ class Subtask
             $methodName,
             serialize($params),
         ]);
+        $this->pdo->prepare("
+            UPDATE {$this->pdo->prefix}_subtasks
+            SET num = num + 1
+            WHERE id = :id
+        ")->execute([
+            'id' => $this->id,
+        ]);
     }
     // }}}
     // {{{ run()
@@ -94,7 +101,7 @@ class Subtask
                 ->concurrent($this->numWorkers)
                 ->unordered()
                 ->tap(function($atomic){
-                    // dont run if errors
+                    // dont run if there were any errors
                     if ($this->errors > 0) {
                         return false;
                     }
@@ -144,8 +151,7 @@ class Subtask
             SET status = :status,
                 errorMessage = :errorMessage
             WHERE id = :id
-        ");
-        $query->execute([
+        ")->execute([
             'id' => $atomic->id,
             'status' => $response->status(),
             'errorMessage' => $response->error,
@@ -154,6 +160,13 @@ class Subtask
         if ($response->failed()) {
             $this->errors++;
         } else {
+            $this->pdo->prepare("
+                UPDATE {$this->pdo->prefix}_subtasks
+                SET done = done + 1
+                WHERE id = :id
+            ")->execute([
+                'id' => $this->id,
+            ]);
             $this->success++;
         }
         $this->freeWorkers[] = $workerId;

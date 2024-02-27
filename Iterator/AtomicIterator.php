@@ -47,7 +47,6 @@ class AtomicIterator implements \Iterator
     public function next():void
     {
         $this->cursor++;
-        //echo($this->cursor . "/" . $this->count . "\n");
 
         $item = $this->query->fetchObject();
 
@@ -80,9 +79,6 @@ class AtomicIterator implements \Iterator
     public function rewind():void
     {
         $this->executeQuery();
-        if ($this->cursor == -1) {
-            //$this->executeQuery();
-        }
 
         $this->next();
     }
