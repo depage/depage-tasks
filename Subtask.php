@@ -149,15 +149,23 @@ class Subtask
         $query = $this->pdo->prepare("
             UPDATE {$this->pdo->prefix}_subtaskatomic
             SET status = :status,
-                errorMessage = :errorMessage
+                error = :error
             WHERE id = :id
         ")->execute([
             'id' => $atomic->id,
             'status' => $response->status(),
-            'errorMessage' => $response->error,
+            'error' => $response->error,
         ]);
 
         if ($response->failed()) {
+            $this->pdo->prepare("
+                UPDATE {$this->pdo->prefix}_subtasks
+                SET errorMessage = :errorMessage
+                WHERE id = :id
+            ")->execute([
+                'id' => $this->id,
+                'errorMessage' => $response->errorMessage,
+            ]);
             $this->errors++;
         } else {
             $this->pdo->prepare("

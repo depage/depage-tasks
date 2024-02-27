@@ -23,7 +23,7 @@ class MockWorker implements Task
                 $channel->send(new \Depage\Tasks\MethodResult('testMethod', $reply));
             } catch (\Throwable $e) {
                 //$channel->send(new \Depage\Tasks\MethodResult('testMethod', null, $e));
-                $channel->send(new \Depage\Tasks\MethodResult('testMethod', null, (string) $e));
+                $channel->send(new \Depage\Tasks\MethodResult('testMethod', null, (string) $e, $e->getMessage()));
             }
         }
 

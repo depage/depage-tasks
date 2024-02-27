@@ -21,6 +21,7 @@ class MethodResult
         public readonly string $methodName,
         public readonly mixed $result,
         public readonly mixed $error = null,
+        public readonly string $errorMessage = '',
     ) {
     }
 
