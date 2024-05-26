@@ -18,7 +18,7 @@ testCurrent:
 		--bootstrap Tests/bootstrap.php \
 		--stop-on-failure \
 		--display-deprecations \
-		--filter testSubtaskException
+		--filter testTaskProgress
 
 testLast:
 	vendor/bin/phpunit Tests/ \

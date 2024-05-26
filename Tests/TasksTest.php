@@ -9,6 +9,7 @@ use Amp\Future;
 use function Amp\Parallel\Worker\workerPool;
 use function Amp\async;
 use function Amp\delay;
+use function Amp\Future;
 
 /**
  * General tests for the htmlform class.
@@ -35,6 +36,7 @@ class TasksTest extends TestCase
         'rY2hrwvw//fx7UNIbSCQOUjBR3w+Su4Cqq7PQ5ixcLw=',
     ];
 
+    // {{{ setUp()
     public function setUp(): void
     {
         $this->pdo = new \Depage\Db\Pdo("mysql:dbname=test_db;host=127.0.0.1", "test_db_user", "test_db_password");
@@ -44,7 +46,9 @@ class TasksTest extends TestCase
 
         \Depage\Tasks\Task::updateSchema($this->pdo);
     }
+    // }}}
 
+    // {{{ testTaskGenerator()
     public function testTaskGenerator():void
     {
         $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testTaskGenerator", "projectName");
@@ -89,7 +93,9 @@ class TasksTest extends TestCase
         $this->assertEquals(count($this->testParams) * 2, $subtask->getSuccess());
         $this->assertEquals(0, $subtask->getErrors());
     }
+    // }}}
 
+    // {{{ testSubtaskException()
     public function testSubtaskException():void
     {
         $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testSubtaskException", "projectName");
@@ -111,84 +117,54 @@ class TasksTest extends TestCase
         $this->assertEquals(1, $subtask->getErrors());
         $this->assertGreaterThanOrEqual(3, $subtask->getSuccess());
     }
+    // }}}
 
-    public function testSimple():void
+    // {{{ testTaskProgress()
+    public function testTaskProgress():void
     {
-        $executions = [];
-        $pool = new Worker\ContextWorkerPool(4);
-
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testTaskGenerator", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+            "initial parameter 3",
+        );
         foreach ($this->testParams as $id => $param) {
-            $worker = workerPool($pool);
-            $task = new MockTask($param . " $id");
-            $executions[] = $worker->submit($task);
+            $subtask->queueMethodCall("testMethod", $param);
+        }
+        $subtask2 = $task->queueSubtask("stage-2", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+            "initial parameter 3",
+        );
+        foreach ($this->testParams as $id => $param) {
+            $subtask2->queueMethodCall("testMethod", $param);
         }
 
-        $responses = Future\await(array_map(
-            fn (Worker\Execution $e) => $e->getFuture(),
-            $executions,
-        ));
 
-        foreach ($responses as $id => $response) {
-            $this->assertEquals("testData: {$this->testParams[$id]} {$id}", $response);
+        $pCount = 20;
+        $fs = [];
+
+        for ($i = 0; $i < $pCount; $i++) {
+            $fs[] = async(function() use ($task, $i) {
+                delay(0.5 * $i);
+
+                return $task->getProgress();
+            });
         }
 
-        $pool->shutdown();
+        $success = $task->run();
+        $percent = -1;
+
+        foreach ($fs as $f) {
+            $progress = $f->await();
+
+            $this->assertGreaterThanOrEqual($percent, $progress->percent);
+            $percent = $progress->percent;
+        }
+
+        $this->assertEquals(100, $percent);
     }
-
-    public function testWorkerPool():void
-    {
-        $workers = [];
-        $freeWorkers = [];
-        $numWorkers = 4;
-        $pool = new Worker\ContextWorkerPool($numWorkers);
-
-        // start workers
-        for ($i = 0; $i < $numWorkers; $i++) {
-            $worker = workerPool($pool);
-            $task = new MockWorker("worker $i");
-            $workers[$i] = $worker->submit($task);
-            $freeWorkers[] = $i;
-        }
-
-        // queue tasks to workers
-        $results = Pipeline::fromIterable($this->testParams)
-            ->concurrent($numWorkers)
-            ->unordered()
-            ->map(function($param) use (&$workers, &$freeWorkers) {
-                $workerId = array_shift($freeWorkers);
-
-                $ch = $workers[$workerId]->getChannel();
-
-                $ch->send(new \Depage\Tasks\MethodCall('testMethod', [$param]));
-
-                $response = $ch->receive();
-
-                $this->assertEquals("testMethod: {$param}", $response->result);
-
-                $freeWorkers[] = $workerId;
-
-                return $response->result;
-            })
-            ->toArray();
-
-        //var_dump($results);
-
-        // close workers
-        foreach ($workers as $w) {
-            $w->getChannel()->send(null);
-
-        }
-
-        // wait for workder to end
-        $responses = Future\await(array_map(
-            fn (Worker\Execution $e) => $e->getFuture(),
-            $workers,
-        ));
-
-        foreach ($responses as $id => $response) {
-            $this->assertEquals("ended", $response);
-        }
-
-        $pool->shutdown();
-    }
+    // }}}
 }
+
+// vim:set ft=php sw=4 sts=4 fdm=marker et :

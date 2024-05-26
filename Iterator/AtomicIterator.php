@@ -22,13 +22,13 @@ class AtomicIterator implements \Iterator
     // {{{ __construct()
     public function __construct(
         protected \Depage\Db\Pdo $pdo,
-        protected int $subtaskId,
+        protected int $parentId,
     ) {
         $this->executeQuery();
     }
     // }}}
 
-    // {{{ fetch()
+    // {{{ executeQuery()
     protected function executeQuery():void
     {
         $this->cursor = -1;
@@ -39,8 +39,14 @@ class AtomicIterator implements \Iterator
             ORDER BY id
             LIMIT 100"
         );
-        $this->query->execute([$this->subtaskId]);
+        $this->query->execute([$this->parentId]);
         $this->count = $this->query->rowCount();
+    }
+    // }}}
+    // {{{ fetchObject()
+    protected function fetchObject():mixed
+    {
+        return $this->query->fetchObject();
     }
     // }}}
     // {{{ next()
@@ -48,7 +54,7 @@ class AtomicIterator implements \Iterator
     {
         $this->cursor++;
 
-        $item = $this->query->fetchObject();
+        $item = $this->fetchObject();
 
         if ($item) {
             $this->item = $item;

@@ -17,7 +17,7 @@ use Amp\Future;
 
 class Subtask
 {
-    public readonly int $id;
+    public int $id;
     protected $pool;
     protected $workers = [];
     protected $freeWorkers = [];
