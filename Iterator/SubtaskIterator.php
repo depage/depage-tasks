@@ -20,7 +20,7 @@ class SubtaskIterator extends AtomicIterator
         $this->query = $this->pdo->prepare(
             "SELECT * FROM {$this->pdo->prefix}_subtasks
             WHERE taskId = ?
-                AND status IS NULL
+                AND status = 'queued'
             ORDER BY id
             LIMIT 100"
         );
@@ -40,6 +40,9 @@ class SubtaskIterator extends AtomicIterator
         $subtask = new \Depage\Tasks\Subtask($this->pdo, $info->taskId, $info->name, $info->workerClass, unserialize($info->params));
 
         $subtask->id = $info->id;
+        $subtask->retries = $info->retries;
+        $subtask->success = $info->done;
+
         return $subtask;
     }
     // }}}

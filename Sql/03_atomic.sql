@@ -11,7 +11,7 @@ CREATE TABLE `_subtaskatomic` (
   `subtaskId` int(11) unsigned NOT NULL,
   `methodName` varchar(255) NOT NULL,
   `params` longblob NOT NULL,
-  `status` enum('done', 'failed') DEFAULT NULL,
+  `status` enum('queued', 'done', 'failed') DEFAULT 'queued',
   `error` text DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `subtaskId` (`subtaskId`),

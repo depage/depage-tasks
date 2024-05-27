@@ -13,12 +13,20 @@ test:
 		--stop-on-failure \
 		--display-deprecations
 
+testCoverage:
+	vendor/bin/phpunit Tests/ \
+		--bootstrap Tests/bootstrap.php \
+		--stop-on-failure \
+		--coverage-filter . \
+		--coverage-html phpunit/ \
+		--display-deprecations
+
 testCurrent:
 	vendor/bin/phpunit Tests/ \
 		--bootstrap Tests/bootstrap.php \
 		--stop-on-failure \
 		--display-deprecations \
-		--filter testTaskProgress
+		--filter testSubtaskRetries
 
 testLast:
 	vendor/bin/phpunit Tests/ \

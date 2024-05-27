@@ -33,4 +33,5 @@ ALTER TABLE `_tasks`
     CHANGE COLUMN `time_added` `timeAdded` datetime NOT NULL,
     CHANGE COLUMN `time_started` `timeStarted` datetime DEFAULT NULL,
     CHANGE COLUMN `projectname` `projectName` varchar(35) DEFAULT NULL,
+    CHANGE COLUMN `status` `status` enum('generating', 'queued', 'running', 'done', 'failed') DEFAULT 'generating',
     ADD COLUMN `timeScheduled` datetime DEFAULT NULL;

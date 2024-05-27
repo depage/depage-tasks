@@ -14,16 +14,18 @@ namespace Depage\Tasks;
 use Amp\Parallel\Worker;
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
+use function Amp\delay;
 
 class Subtask
 {
     public int $id;
+    public int $retries = 0;
+    public int $success = 0;
     protected $pool;
     protected $workers = [];
     protected $freeWorkers = [];
     protected int $numWorkers = 4;
     protected int $errors = 0;
-    protected int $success = 0;
     protected ?string $status = null;
 
     // {{{ __construct()
@@ -59,6 +61,27 @@ class Subtask
         return $this->id;
     }
     // }}}
+    // {{{ setRetries()
+    public function setRetries(int $retries):void
+    {
+        $this->retries = $retries;
+
+        $this->pdo->prepare("
+            UPDATE {$this->pdo->prefix}_subtasks
+            SET retries = :retries
+            WHERE id = :id
+        ")->execute([
+            'id' => $this->id,
+            'retries' => $this->retries,
+        ]);
+    }
+    // }}}
+    // {{{ getRetries()
+    public function getRetries():int
+    {
+        return $this->retries;
+    }
+    // }}}
     // {{{ queueMethodCall()
     public function queueMethodCall(string $methodName, ...$params):void
     {
@@ -89,7 +112,6 @@ class Subtask
         $this->workers = [];
         $this->freeWorkers = [];
         $this->errors = 0;
-        $this->success = 0;
 
         $this->startPool();
 
@@ -122,14 +144,36 @@ class Subtask
 
         $this->stopPool();
 
-        $this->status = $this->errors > 0 ? "failed" : "done";
+        if ($this->errors > 0) {
+            $this->retries--;
+            if ($this->retries > 0) {
+                delay(1);
+                $this->status = 'queued';
+
+                $this->pdo->prepare("
+                    UPDATE {$this->pdo->prefix}_subtaskatomic
+                    SET status = 'queued'
+                    WHERE subtaskId = :subtaskId
+                        AND status = 'failed'
+                ")->execute([
+                    'subtaskId' => $this->id,
+                ]);
+            } else {
+                $this->status = 'failed';
+            }
+        } else {
+            $this->status = 'done';
+        }
+
         $this->pdo->prepare("
             UPDATE {$this->pdo->prefix}_subtasks
-            SET status = :status
+            SET status = :status,
+                retries = :retries
             WHERE id = :id
         ")->execute([
             'id' => $this->id,
             'status' => $this->status,
+            'retries' => $this->retries,
         ]);
 
         return $this->errors === 0;
@@ -189,6 +233,7 @@ class Subtask
         // start workers
         for ($i = 0; $i < $this->numWorkers; $i++) {
             $worker = \Amp\Parallel\Worker\workerPool($this->pool);
+
             $task = new $this->workerClass(...$this->params);
             $this->workers[$i] = $worker->submit($task);
             $this->freeWorkers[] = $i;

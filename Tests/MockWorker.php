@@ -22,7 +22,6 @@ class MockWorker implements Task
 
                 $channel->send(new \Depage\Tasks\MethodResult('testMethod', $reply));
             } catch (\Throwable $e) {
-                //$channel->send(new \Depage\Tasks\MethodResult('testMethod', null, $e));
                 $channel->send(new \Depage\Tasks\MethodResult('testMethod', null, (string) $e, $e->getMessage()));
             }
         }
@@ -32,8 +31,13 @@ class MockWorker implements Task
 
     protected function testMethod($param):string
     {
+        return "testMethod: " . $param;
+    }
+
+    protected function testMethodWithDelay($param):string
+    {
         $sleep = rand(0, 10) / 10;
-        //echo "running testMethod $sleep on $this->initArg: {$param}\n";
+
         delay($sleep);
 
         return "testMethod: " . $param;
@@ -41,10 +45,21 @@ class MockWorker implements Task
 
     protected function testException($param):string
     {
-        $sleep = rand(0, 10) / 10;
-        //echo "running testMethod $sleep on $this->initArg: {$param}\n";
-        delay($sleep);
-
         throw new \Exception("testException: " . $param);
+    }
+
+    protected function testRetry($time):string
+    {
+        $minTime = time() - 2;
+
+        delay(1);
+
+        // fail first
+        if ($time > $minTime) {
+            throw new \Exception("testRetry: " . $time);
+        }
+
+        // succeed after some time
+        return "testMethod: " . $time;
     }
 }

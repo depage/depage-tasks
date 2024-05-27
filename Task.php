@@ -16,6 +16,7 @@ namespace Depage\Tasks;
 
 use Amp\Pipeline\Pipeline;
 use Amp\Future;
+use Depage\Tasks\Subtask;
 
 class Task {
     private $tmpvars = [];
@@ -91,7 +92,7 @@ class Task {
     protected $lockName = "";
 
     protected $errors = 0;
-    protected $success = 0;
+    public $success = 0;
 
     // {{{ constructor
     private function __construct($pdo) {
@@ -171,7 +172,7 @@ class Task {
     // }}}
     // {{{ loadOrCreate()
     static public function loadOrCreate($pdo, $taskName, $projectName = "") {
-        list($task) = self::loadByName($pdo, $taskName, "status IS NULL OR status != 'failed'");
+        list($task) = self::loadByName($pdo, $taskName, "status != 'failed'");
 
         if (!$task) {
             $task = self::create($pdo, $taskName, $projectName);
@@ -262,10 +263,11 @@ class Task {
         if ($locked) {
             $query = $this->pdo->prepare(
                 "UPDATE {$this->tableTasks}
-                SET timeStarted = NOW()
+                SET
+                    timeStarted = NOW(),
+                    status = 'running'
                 WHERE
-                    id = :id AND
-                    timeStarted IS NULL"
+                    id = :id"
             );
             $query->execute(array(
                 "id" => $this->taskId,
@@ -313,6 +315,12 @@ class Task {
     // {{{ run()
     public function run():bool
     {
+        if ($this->isRunning()) {
+            return false;
+        }
+
+        $this->lock();
+
         $this->errors = 0;
         $this->success = 0;
 
@@ -327,7 +335,15 @@ class Task {
                     if ($this->errors > 0) {
                         return false;
                     }
-                    $subtask->run();
+                    $success = $subtask->run();
+
+                    if (!$success) {
+                        if ($subtask->getRetries() <= 0) {
+                            $this->errors++;
+                        }
+
+                        return false;
+                    }
                 });
 
             $pipelineIterator = $pipeline->getIterator();
@@ -337,75 +353,20 @@ class Task {
             }
 
             if ($this->errors == 0) {
-                // reset atomicIterator and request new items in queue if available
+                // reset subtaskIterator and request new items in queue if available
                 $subtaskIterator->rewind();
             }
         }
 
+        if ($this->errors > 0) {
+            $this->setTaskStatus("failed");
+        } else {
+            $this->setTaskStatus("done");
+        }
+
+        $this->unlock();
+
         return $this->errors === 0;
-    }
-    // }}}
-
-    // {{{ addSubtask()
-    /* addSubtask only creates task in db.
-     * the current instance is NOT modified.
-     * reload task from the db if you want to execute subtasks.
-     *
-     * also see addSubtasks for more convenience.
-     *
-     * @return int return id of created subtask that can be used for dependsOn
-     */
-    public function addSubtask($name, $php, $params = array(), $dependsOn = NULL, $maxRetries = 3) {
-        if (!is_array($params)) {
-            $params = array();
-        }
-        foreach ($params as &$param) {
-            $param = $this->escapeParam($param);
-        }
-        $phpCode = trim(vsprintf($php, $params));
-        $query = $this->pdo->prepare(
-            "INSERT INTO {$this->tableSubtasks}
-                (taskId, name, retries, php, dependsOn) VALUES (:taskId, :name, :retries, :php, :dependsOn)"
-        );
-        $query->execute(array(
-            "taskId" => $this->taskId,
-            "name" => mb_substr($name, 0, 250),
-            "retries" => $maxRetries,
-            "php" => $phpCode,
-            "dependsOn" => $dependsOn,
-        ));
-
-        if ($this->status == "done") {
-            // reset done status when adding new subtasks
-            $this->setTaskStatus(null);
-        }
-
-        return $this->pdo->lastInsertId();
-    }
-    // }}}
-    // {{{ addSubtasks()
-    /* addSubtasks creates multiple subtasks.
-     * specify tasks as an array of arrays containing name, php and dependsOn keys.
-     * dependsOn references another task in this array by index.
-     */
-    public function addSubtasks($tasks) {
-        $this->beginTaskTransaction();
-
-        foreach ($tasks as &$task) {
-            if (!is_array($task)) {
-                throw new \Exception ("malformed task array");
-            }
-
-            if (isset($tasks[$task["dependsOn"]])) {
-                $dependsOn = $tasks[$task["dependsOn"]]["id"];
-            } else {
-                $dependsOn = NULL;
-            }
-
-            $task["id"] = $this->addSubtask($task["name"], $task["php"], array(), $dependsOn);
-        }
-
-        $this->commitTaskTransaction();
     }
     // }}}
 
@@ -462,7 +423,7 @@ class Task {
             FROM {$this->tableSubtasks}
             WHERE
                 taskId = :taskId AND
-                (status IS NULL OR status != 'done')
+                (status = 'running' OR status != 'done')
             ORDER BY id ASC
             LIMIT 1"
         );
@@ -482,7 +443,8 @@ class Task {
     // }}}
 
     // {{{ queueSubtask()
-    public function queueSubtask($name, $workerClass, ...$params) {
+    public function queueSubtask($name, $workerClass, ...$params):Subtask
+    {
         $subtask = new Subtask($this->pdo, $this->taskId, $name, $workerClass, $params);
         $subtask->save();
 

@@ -42,7 +42,7 @@ class TasksTest extends TestCase
         $this->pdo = new \Depage\Db\Pdo("mysql:dbname=test_db;host=127.0.0.1", "test_db_user", "test_db_password");
         $this->pdo->prefix = "tasks";
 
-        $this->pdo->query("DROP TABLE tasks_subtaskatomic, tasks_subtasks, tasks_tasks;");
+        $this->pdo->query("DROP TABLE IF EXISTS tasks_subtaskatomic, tasks_subtasks, tasks_tasks;");
 
         \Depage\Tasks\Task::updateSchema($this->pdo);
     }
@@ -57,13 +57,13 @@ class TasksTest extends TestCase
             "initial parameter 2",
         );
         foreach ($this->testParams as $id => $param) {
-            $subtask->queueMethodCall("testMethod", $param);
+            $subtask->queueMethodCall("testMethodWithDelay", $param);
         }
 
         // tests are correctly retrieved from the database
         $atomicIterator = new \Depage\Tasks\Iterator\AtomicIterator($this->pdo, $subtask->id);
         foreach ($atomicIterator as $atomic) {
-            $this->assertEquals("testMethod", $atomic->methodName);
+            $this->assertEquals("testMethodWithDelay", $atomic->methodName);
             $this->assertEquals($this->testParams[$atomicIterator->key()], unserialize($atomic->params)[0]);
         }
 
@@ -73,7 +73,7 @@ class TasksTest extends TestCase
 
             foreach ($this->testParams as $id => $param) {
                 if ($id <= count($this->testParams) / 2) {
-                    $subtask->queueMethodCall("testMethod", $param);
+                    $subtask->queueMethodCall("testMethodWithDelay", $param);
                 }
             }
         });
@@ -82,7 +82,7 @@ class TasksTest extends TestCase
 
             foreach ($this->testParams as $id => $param) {
                 if ($id > count($this->testParams) / 2) {
-                    $subtask->queueMethodCall("testMethod", $param);
+                    $subtask->queueMethodCall("testMethodWithDelay", $param);
                 }
             }
         });
@@ -129,7 +129,7 @@ class TasksTest extends TestCase
             "initial parameter 3",
         );
         foreach ($this->testParams as $id => $param) {
-            $subtask->queueMethodCall("testMethod", $param);
+            $subtask->queueMethodCall("testMethodWithDelay", $param);
         }
         $subtask2 = $task->queueSubtask("stage-2", MockWorker::class,
             "initial parameter 1",
@@ -137,7 +137,7 @@ class TasksTest extends TestCase
             "initial parameter 3",
         );
         foreach ($this->testParams as $id => $param) {
-            $subtask2->queueMethodCall("testMethod", $param);
+            $subtask2->queueMethodCall("testMethodWithDelay", $param);
         }
 
 
@@ -165,6 +165,45 @@ class TasksTest extends TestCase
         $this->assertEquals(100, $percent);
     }
     // }}}
+
+    // {{{ testSubtaskRetries()
+    public function testSubtaskRetries():void
+    {
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testSubtaskException", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+        );
+        $subtask->setRetries(5);
+        $subtask->queueMethodCall("testMethod", time());
+        $subtask->queueMethodCall("testRetry", time());
+        $subtask->queueMethodCall("testMethod", time());
+
+        $success = $task->run();
+
+        $this->assertEquals(true, $success);
+    }
+    // }}}
+
+    // {{{ testSubtaskRetriesFailed()
+    public function testSubtaskRetriesFailed():void
+    {
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testSubtaskException", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+        );
+        $subtask->setRetries(1);
+        $subtask->queueMethodCall("testMethod", time());
+        $subtask->queueMethodCall("testRetry", time());
+        $subtask->queueMethodCall("testMethod", time());
+
+        $success = $task->run();
+
+        $this->assertEquals(false, $success);
+    }
+    // }}}
+
 }
 
 // vim:set ft=php sw=4 sts=4 fdm=marker et :

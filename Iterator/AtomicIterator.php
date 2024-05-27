@@ -35,7 +35,7 @@ class AtomicIterator implements \Iterator
         $this->query = $this->pdo->prepare(
             "SELECT * FROM {$this->pdo->prefix}_subtaskatomic
             WHERE subtaskId = ?
-                AND status IS NULL
+                AND status = 'queued'
             ORDER BY id
             LIMIT 100"
         );

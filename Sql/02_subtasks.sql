@@ -39,10 +39,17 @@ ALTER TABLE `_subtasks`
     @version 2.5.0
 */
 ALTER TABLE `_subtasks`
+    DROP CONSTRAINT `_subtasks_ibfk_1`;
+
+ALTER TABLE `_subtasks`
     DROP COLUMN `php`,
-    CHANGE COLUMN `task_id` `taskId` int(11) unsigned NOT NULL,
+    CHANGE COLUMN `task_id` `taskId` int(13) unsigned NOT NULL,
     CHANGE COLUMN `depends_on` `dependsOn` int(11) DEFAULT NULL,
+    CHANGE COLUMN `status` `status` enum('queued', 'done', 'failed') DEFAULT 'queued',
     ADD COLUMN `num` int(11) NOT NULL DEFAULT 0 AFTER `status`,
     ADD COLUMN `done` int(11) NOT NULL DEFAULT 0 AFTER `num`,
     ADD COLUMN `workerClass` varchar(255) NOT NULL AFTER `name`,
     ADD COLUMN `params` longblob NOT NULL AFTER `workerClass`;
+
+ALTER TABLE `_subtasks`
+    ADD CONSTRAINT `_subtasks_ibfk_1` FOREIGN KEY (`taskId`) REFERENCES `_tasks` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
