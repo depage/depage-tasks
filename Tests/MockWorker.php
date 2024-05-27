@@ -50,7 +50,7 @@ class MockWorker implements Task
 
     protected function testRetry($time):string
     {
-        $minTime = time() - 2;
+        $minTime = time() - 4;
 
         delay(1);
 

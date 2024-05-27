@@ -95,6 +95,28 @@ class TasksTest extends TestCase
     }
     // }}}
 
+    // {{{ testTaskGeneratorAbovePullLimit()
+    public function testTaskGeneratorAbovePullLimit():void
+    {
+        $task = \Depage\Tasks\Task::loadOrCreate($this->pdo, "testTaskGenerator", "projectName");
+        $subtask = $task->queueSubtask("stage-1", MockWorker::class,
+            "initial parameter 1",
+            "initial parameter 2",
+        );
+        for ($i = 0; $i < 20; $i++) {
+            foreach ($this->testParams as $id => $param) {
+                $subtask->queueMethodCall("testMethod", $param);
+            }
+        }
+
+        $success = $subtask->run();
+
+        $this->assertEquals(true, $success);
+        $this->assertEquals(count($this->testParams) * 20, $subtask->getSuccess());
+        $this->assertEquals(0, $subtask->getErrors());
+    }
+    // }}}
+
     // {{{ testSubtaskException()
     public function testSubtaskException():void
     {
@@ -193,7 +215,7 @@ class TasksTest extends TestCase
             "initial parameter 1",
             "initial parameter 2",
         );
-        $subtask->setRetries(1);
+        $subtask->setRetries(2);
         $subtask->queueMethodCall("testMethod", time());
         $subtask->queueMethodCall("testRetry", time());
         $subtask->queueMethodCall("testMethod", time());
