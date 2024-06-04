@@ -23,6 +23,11 @@ class Task {
     protected $lockFp = null;
 
     /**
+     * @brief pdo instance of database connection
+     **/
+    protected $pdo = null;
+
+    /**
      * @brief int Id of Task
      **/
     public $taskId = null;
@@ -68,10 +73,19 @@ class Task {
     protected $lastCheck = null;
 
     /**
+     * @brief array of subtasks
+     **/
+    protected $subtasks = [];
+
+    /**
      * @brief subTasksRun array of subtask ids that where already run
      **/
-    protected $subTasksRun = array();
+    protected $subTasksRun = [];
 
+    /**
+     * @brief lockName name of lock file
+     **/
+    protected $lockName = "";
 
     // {{{ constructor
     private function __construct($pdo) {
