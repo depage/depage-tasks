@@ -52,7 +52,20 @@ namespace Depage\Tasks;
 
 class TaskRunner
 {
-    // {{{ default config
+    // {{{ variables
+    /**
+     * @brief pdo instance of database connection
+     **/
+    protected $pdo = null;
+
+    /**
+     * @brief selfPath path to this script
+     **/
+    protected $selfPath = null;
+
+    /**
+     * @brief whether to use lowPriority for subtasks
+     **/
     protected $lowPriority = true;
 
     /**

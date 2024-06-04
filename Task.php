@@ -27,7 +27,7 @@ class Task {
     protected $lockFp = null;
 
     /**
-     * @brief pdo instance
+     * @brief pdo instance of database connection
      **/
     protected $pdo = null;
 
